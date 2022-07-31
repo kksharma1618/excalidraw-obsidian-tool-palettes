@@ -1,6 +1,6 @@
-# Excalidraw Tool Palletes
+# Excalidraw Tool Palettes
 
-Provides tool "palletes" for https://github.com/zsviczian/obsidian-excalidraw-plugin
+Provides tool "palettes" for https://github.com/zsviczian/obsidian-excalidraw-plugin
 
 You can save style configuration for each of the provided tool in excalidraw: rectangle, diamond, ellipse, arrow, line, freedraw, and text.
 
