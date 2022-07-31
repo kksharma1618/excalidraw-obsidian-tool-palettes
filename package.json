@@ -1,6 +1,6 @@
 {
 	"name": "excalidraw-obsidian-tool-palletes",
-	"version": "1.0.1",
+	"version": "1.1.0",
 	"description": "excalidraw-obsidian-tool-palletes",
 	"main": "main.js",
 	"scripts": {
