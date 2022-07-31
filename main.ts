@@ -1,137 +1,217 @@
-import { App, Editor, MarkdownView, Modal, Notice, Plugin, PluginSettingTab, Setting } from 'obsidian';
+import { App, Modal, Plugin, SuggestModal } from "obsidian";
 
-// Remember to rename these classes and interfaces!
-
-interface MyPluginSettings {
-	mySetting: string;
+interface ISavedState {
+	[tool: string]: {
+		[palleteName: string]: unknown;
+	};
 }
+const stateKeys = [
+	"currentItemBackgroundColor",
+	"currentItemEndArrowhead",
+	"currentItemFillStyle",
+	"currentItemFontFamily",
+	"currentItemFontSize",
+	"currentItemLinearStrokeSharpness",
+	"currentItemOpacity",
+	"currentItemRoughness",
+	"currentItemStartArrowhead",
+	"currentItemStrokeColor",
+	"currentItemStrokeSharpness",
+	"currentItemStrokeStyle",
+	"currentItemStrokeWidth",
+	"currentItemTextAlign",
+];
 
-const DEFAULT_SETTINGS: MyPluginSettings = {
-	mySetting: 'default'
-}
+export default class ExcalidrawObsidianToolPalletesPlugin extends Plugin {
+	state: ISavedState;
 
-export default class MyPlugin extends Plugin {
-	settings: MyPluginSettings;
+	async savePallete(name: string) {
+		const { ep } = this.getExcalidraw();
+		const tool = ep.getAppState().activeTool;
+		if (!tool || !tool.type) {
+			return;
+		}
+
+		const st = ep.getAppState();
+		const styles: any = {};
+		stateKeys.forEach((k) => {
+			styles[k] = st[k];
+		});
+
+		this.state = {
+			...(this.state || {}),
+		};
+		this.state[tool.type] = {
+			...(this.state[tool.type] || {}),
+		};
+		this.state[tool.type][name] = styles;
+		await this.saveState();
+	}
+
+	getExcalidraw() {
+		const ea = (window as unknown as any).ExcalidrawAutomate;
+		ea.reset();
+		ea.setView("first");
+		const ep = ea.getExcalidrawAPI();
+		return { ea, ep };
+	}
+
+	async saveState() {
+		await this.saveData(this.state);
+	}
+	async loadState() {
+		this.state = Object.assign({}, {}, await this.loadData());
+	}
+
+	getCurrentToolType() {
+		const { ep } = this.getExcalidraw();
+		const tool = ep.getAppState().activeTool;
+		if (!tool || !tool.type) {
+			return "";
+		}
+		return tool.type;
+	}
+	getCurrentToolPalletes() {
+		const t = this.getCurrentToolType();
+		return this.state[t] ? Object.keys(this.state[t]) : [];
+	}
+	loadPallete(tool: string, name: string) {
+		if (this.state[tool] && this.state[tool][name]) {
+			const { ep } = this.getExcalidraw();
+			ep.updateScene({
+				appState: {
+					...ep.getAppState(),
+					...(this.state[tool][name] as any),
+				},
+			});
+		}
+	}
 
 	async onload() {
-		await this.loadSettings();
+		await this.loadState();
 
-		// This creates an icon in the left ribbon.
-		const ribbonIconEl = this.addRibbonIcon('dice', 'Sample Plugin', (evt: MouseEvent) => {
-			// Called when the user clicks the icon.
-			new Notice('This is a notice!');
-		});
-		// Perform additional things with the ribbon
-		ribbonIconEl.addClass('my-plugin-ribbon-class');
-
-		// This adds a status bar item to the bottom of the app. Does not work on mobile apps.
-		const statusBarItemEl = this.addStatusBarItem();
-		statusBarItemEl.setText('Status Bar Text');
-
-		// This adds a simple command that can be triggered anywhere
 		this.addCommand({
-			id: 'open-sample-modal-simple',
-			name: 'Open sample modal (simple)',
+			id: "save-pallete",
+			name: "Save pallete",
 			callback: () => {
-				new SampleModal(this.app).open();
-			}
+				this.saveCurrentToolPallete();
+			},
 		});
-		// This adds an editor command that can perform some operation on the current editor instance
+
 		this.addCommand({
-			id: 'sample-editor-command',
-			name: 'Sample editor command',
-			editorCallback: (editor: Editor, view: MarkdownView) => {
-				console.log(editor.getSelection());
-				editor.replaceSelection('Sample Editor Command');
+			id: "load-pallete",
+			name: "Load pallete",
+			callback: () => {
+				this.loadToolPallete();
+			},
+		});
+	}
+
+	saveCurrentToolPallete() {
+		const tool = this.getCurrentToolType();
+		if (!tool || tool === "selection") {
+			return;
+		}
+
+		new SaveSuggestPalleteModal(this.app, this).open();
+	}
+	loadToolPallete() {
+		const tool = this.getCurrentToolType();
+		if (!tool || tool === "selection") {
+			return;
+		}
+
+		new LoadPallete(this.app, this).open();
+	}
+
+	onunload() {}
+}
+
+class SaveSuggestPalleteModal extends SuggestModal<string> {
+	constructor(
+		app: App,
+		private plugin: ExcalidrawObsidianToolPalletesPlugin
+	) {
+		super(app);
+		this.setPlaceholder(
+			"Provide name for the pallete. Or pick existing to update"
+		);
+
+		this.inputListener = this.inputListener.bind(this);
+	}
+	getSuggestions(query: string): string[] {
+		return this.plugin
+			.getCurrentToolPalletes()
+			.filter((p) => p.toLowerCase().includes(query.toLowerCase()));
+	}
+
+	// Renders each suggestion item.
+	renderSuggestion(p: string, el: HTMLElement) {
+		el.createEl("div", { text: p });
+	}
+
+	// Perform action on the selected suggestion.
+	onChooseSuggestion(p: string, evt: MouseEvent | KeyboardEvent) {
+		this.plugin.savePallete(p);
+		this.close();
+	}
+
+	onOpen() {
+		this.inputEl.addEventListener("keyup", this.inputListener);
+	}
+
+	onClose() {
+		this.inputEl.removeEventListener("keyup", this.inputListener);
+	}
+
+	private inputListener(e: KeyboardEvent) {
+		if (e.code === "Enter") {
+			const p = this.inputEl.value.trim();
+			if (p) {
+				this.plugin.savePallete(p);
+				this.close();
 			}
-		});
-		// This adds a complex command that can check whether the current state of the app allows execution of the command
-		this.addCommand({
-			id: 'open-sample-modal-complex',
-			name: 'Open sample modal (complex)',
-			checkCallback: (checking: boolean) => {
-				// Conditions to check
-				const markdownView = this.app.workspace.getActiveViewOfType(MarkdownView);
-				if (markdownView) {
-					// If checking is true, we're simply "checking" if the command can be run.
-					// If checking is false, then we want to actually perform the operation.
-					if (!checking) {
-						new SampleModal(this.app).open();
-					}
-
-					// This command will only show up in Command Palette when the check function returns true
-					return true;
-				}
-			}
-		});
-
-		// This adds a settings tab so the user can configure various aspects of the plugin
-		this.addSettingTab(new SampleSettingTab(this.app, this));
-
-		// If the plugin hooks up any global DOM events (on parts of the app that doesn't belong to this plugin)
-		// Using this function will automatically remove the event listener when this plugin is disabled.
-		this.registerDomEvent(document, 'click', (evt: MouseEvent) => {
-			console.log('click', evt);
-		});
-
-		// When registering intervals, this function will automatically clear the interval when the plugin is disabled.
-		this.registerInterval(window.setInterval(() => console.log('setInterval'), 5 * 60 * 1000));
-	}
-
-	onunload() {
-
-	}
-
-	async loadSettings() {
-		this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData());
-	}
-
-	async saveSettings() {
-		await this.saveData(this.settings);
+		}
 	}
 }
 
-class SampleModal extends Modal {
-	constructor(app: App) {
+export class LoadPallete extends Modal {
+	constructor(
+		app: App,
+		private plugin: ExcalidrawObsidianToolPalletesPlugin
+	) {
 		super(app);
 	}
 
 	onOpen() {
-		const {contentEl} = this;
-		contentEl.setText('Woah!');
+		const tool = this.plugin.getCurrentToolType();
+
+		if (!tool) {
+			this.close();
+			return;
+		}
+		const palletes = this.plugin.getCurrentToolPalletes();
+
+		const { contentEl } = this;
+
+		if (!palletes.length) {
+			contentEl.setText("No palletes found for " + tool + " tool");
+			return;
+		}
+		contentEl.createEl("p", { text: "Pick pallete for " + tool + " tool" });
+		const ul = contentEl.createEl("ul");
+		palletes.forEach((p) => {
+			const li = ul.createEl("li");
+			const a = li.createEl("a", { text: p });
+			a.addEventListener("click", () => {
+				this.plugin.loadPallete(tool, p);
+				this.close();
+			});
+		});
 	}
 
 	onClose() {
-		const {contentEl} = this;
+		const { contentEl } = this;
 		contentEl.empty();
-	}
-}
-
-class SampleSettingTab extends PluginSettingTab {
-	plugin: MyPlugin;
-
-	constructor(app: App, plugin: MyPlugin) {
-		super(app, plugin);
-		this.plugin = plugin;
-	}
-
-	display(): void {
-		const {containerEl} = this;
-
-		containerEl.empty();
-
-		containerEl.createEl('h2', {text: 'Settings for my awesome plugin.'});
-
-		new Setting(containerEl)
-			.setName('Setting #1')
-			.setDesc('It\'s a secret')
-			.addText(text => text
-				.setPlaceholder('Enter your secret')
-				.setValue(this.plugin.settings.mySetting)
-				.onChange(async (value) => {
-					console.log('Secret: ' + value);
-					this.plugin.settings.mySetting = value;
-					await this.plugin.saveSettings();
-				}));
 	}
 }
