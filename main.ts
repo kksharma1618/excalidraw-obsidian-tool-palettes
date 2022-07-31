@@ -1,4 +1,4 @@
-import { App, Modal, Plugin, SuggestModal } from "obsidian";
+import { App, Modal, Notice, Plugin, SuggestModal } from "obsidian";
 
 interface ISavedState {
 	[tool: string]: {
@@ -20,6 +20,16 @@ const stateKeys = [
 	"currentItemStrokeStyle",
 	"currentItemStrokeWidth",
 	"currentItemTextAlign",
+];
+
+const toolTypes = [
+	"rectangle",
+	"diamond",
+	"ellipse",
+	"arrow",
+	"line",
+	"freedraw",
+	"text",
 ];
 
 export default class ExcalidrawObsidianToolPalletesPlugin extends Plugin {
@@ -86,21 +96,26 @@ export default class ExcalidrawObsidianToolPalletesPlugin extends Plugin {
 			});
 		}
 	}
-
+	async removePallete(tool: string, name: string) {
+		if (this.state[tool] && this.state[tool][name]) {
+			delete this.state[tool][name];
+			await this.saveState();
+		}
+	}
 	async onload() {
 		await this.loadState();
 
 		this.addCommand({
-			id: "save-pallete",
-			name: "Save pallete",
+			id: "save-style",
+			name: "Save style",
 			callback: () => {
 				this.saveCurrentToolPallete();
 			},
 		});
 
 		this.addCommand({
-			id: "load-pallete",
-			name: "Load pallete",
+			id: "load-style",
+			name: "Load style",
 			callback: () => {
 				this.loadToolPallete();
 			},
@@ -109,15 +124,16 @@ export default class ExcalidrawObsidianToolPalletesPlugin extends Plugin {
 
 	saveCurrentToolPallete() {
 		const tool = this.getCurrentToolType();
-		if (!tool || tool === "selection") {
+		if (!toolTypes.includes(tool)) {
+			new Notice("No valid tool selected");
 			return;
 		}
-
 		new SaveSuggestPalleteModal(this.app, this).open();
 	}
 	loadToolPallete() {
 		const tool = this.getCurrentToolType();
-		if (!tool || tool === "selection") {
+		if (!toolTypes.includes(tool)) {
+			new Notice("No valid tool selected");
 			return;
 		}
 
@@ -134,9 +150,8 @@ class SaveSuggestPalleteModal extends SuggestModal<string> {
 	) {
 		super(app);
 		this.setPlaceholder(
-			"Provide name for the pallete. Or pick existing to update"
+			"Provide name for the style. Or pick existing one to update"
 		);
-
 		this.inputListener = this.inputListener.bind(this);
 	}
 	getSuggestions(query: string): string[] {
@@ -195,10 +210,10 @@ export class LoadPallete extends Modal {
 		const { contentEl } = this;
 
 		if (!palletes.length) {
-			contentEl.setText("No palletes found for " + tool + " tool");
+			contentEl.setText("No styles found for " + tool + " tool");
 			return;
 		}
-		contentEl.createEl("p", { text: "Pick pallete for " + tool + " tool" });
+		contentEl.createEl("h3", { text: "Pick style for " + tool + " tool" });
 		const ul = contentEl.createEl("ul");
 		palletes.forEach((p) => {
 			const li = ul.createEl("li");
@@ -207,6 +222,15 @@ export class LoadPallete extends Modal {
 				this.plugin.loadPallete(tool, p);
 				this.close();
 			});
+			li.createEl("span", { text: " " });
+
+			const a2 = li.createEl("a", { text: "X", title: "Remove style" });
+			a2.addEventListener("click", () => {
+				this.plugin.removePallete(tool, p);
+				li.remove();
+			});
+			a2.style.color = "red";
+			a2.style.textDecoration = "none";
 		});
 	}
 
